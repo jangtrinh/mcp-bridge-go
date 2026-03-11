@@ -16,10 +16,10 @@ import (
 
 // Config holds runtime configuration, loaded from environment variables.
 type Config struct {
-	AppName      string // Target application name (default: "Antigravity")
-	ShortcutKey  string // Key to open chat panel, used with Cmd (default: "l")
-	Workspace    string // Default workspace path (default: current dir)
-	WaitSeconds  int    // Default seconds to wait for changes (default: 120)
+	AppName     string // Target application name (default: "Antigravity")
+	ShortcutKey string // Key to open chat panel, used with Cmd (default: "l")
+	Workspace   string // Default workspace path (default: current dir)
+	WaitSeconds int    // Default seconds to wait for changes (default: 120)
 }
 
 func loadConfig() Config {
