@@ -95,6 +95,14 @@ func main() {
 	}
 }
 
+// ─── WAIT RESULT ────────────────────────────────────────────────
+
+type waitResult struct {
+	Detected   bool   // Whether file changes were detected
+	Reason     string // Why the wait ended
+	Diagnostic string // Contextual info for the caller
+}
+
 // ─── TOOL HANDLERS ──────────────────────────────────────────────
 
 func handleSendToApp(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -119,18 +127,31 @@ func handleSendToApp(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to send prompt: %v", err)), nil
 	}
 
-	// Step 4: Wait for changes
-	detected := waitForChanges(workspace, initialStatus, waitSecs)
+	// Step 4: Wait for changes with diagnostic
+	wr := waitForChanges(workspace, initialStatus, waitSecs)
 
-	// Step 5: Get diff
-	changes := getWorkspaceChanges(workspace)
+	// Step 5: Build result
+	if wr.Detected {
+		changes := getWorkspaceChanges(workspace)
+		result := fmt.Sprintf("✅ Prompt sent to %s\n\n"+
+			"**Prompt:** %s\n\n"+
+			"**Status:** %s\n\n"+
+			"**Workspace changes:**\n```\n%s\n```",
+			cfg.AppName, prompt, wr.Reason, changes)
+		return mcp.NewToolResultText(result), nil
+	}
 
-	result := fmt.Sprintf("✅ Prompt sent to %s\n\n"+
+	// Timeout — return diagnostic instead of silent failure
+	result := fmt.Sprintf("⏱ Prompt sent to %s but no file changes detected after %ds.\n\n"+
 		"**Prompt:** %s\n\n"+
-		"**Changes detected:** %v\n\n"+
-		"**Workspace changes:**\n```\n%s\n```",
-		cfg.AppName, prompt, detected, changes)
-
+		"**Reason:** %s\n\n"+
+		"**Diagnostic:**\n%s\n\n"+
+		"**Recommended actions:**\n"+
+		"- The AI may have responded with a question or explanation (no code changes)\n"+
+		"- Try sending a more specific prompt\n"+
+		"- Use `check_workspace_changes` to verify current state\n"+
+		"- Increase `waitSeconds` if the task is complex",
+		cfg.AppName, waitSecs, prompt, wr.Reason, wr.Diagnostic)
 	return mcp.NewToolResultText(result), nil
 }
 
@@ -165,6 +186,11 @@ func runOsascriptMulti(lines []string) error {
 func isAppRunning() bool {
 	out, err := runOsascript(`application "` + cfg.AppName + `" is running`)
 	return err == nil && out == "true"
+}
+
+func isAppFrontmost() bool {
+	out, err := runOsascript(`tell application "System Events" to get name of first application process whose frontmost is true`)
+	return err == nil && strings.EqualFold(strings.TrimSpace(out), cfg.AppName)
 }
 
 func sendPrompt(prompt string) error {
@@ -292,7 +318,7 @@ func getWorkspaceChanges(workspace string) string {
 	return strings.Join(parts, "\n\n")
 }
 
-func waitForChanges(workspace, initialStatus string, waitSecs int) bool {
+func waitForChanges(workspace, initialStatus string, waitSecs int) waitResult {
 	// Wait initial 5s for the app to start processing
 	time.Sleep(5 * time.Second)
 
@@ -302,9 +328,36 @@ func waitForChanges(workspace, initialStatus string, waitSecs int) bool {
 		if current != initialStatus {
 			// Wait a bit more to let writes finish
 			time.Sleep(3 * time.Second)
-			return true
+			return waitResult{
+				Detected: true,
+				Reason:   "File changes detected",
+			}
 		}
 		time.Sleep(3 * time.Second)
 	}
-	return false
+
+	// Timeout — gather diagnostic info
+	appState := "not running"
+	if isAppRunning() {
+		if isAppFrontmost() {
+			appState = "running and frontmost (may still be processing or waiting for input)"
+		} else {
+			appState = "running but not frontmost (another app took focus)"
+		}
+	}
+
+	currentStatus := gitStatus(workspace)
+	workspaceState := "clean (no uncommitted changes)"
+	if currentStatus != "" {
+		workspaceState = "has uncommitted changes (same as before prompt)"
+	}
+
+	diagnostic := fmt.Sprintf("- %s: %s\n- Workspace: %s\n- Wait time: %ds",
+		cfg.AppName, appState, workspaceState, waitSecs)
+
+	return waitResult{
+		Detected:   false,
+		Reason:     fmt.Sprintf("No file changes after %ds", waitSecs),
+		Diagnostic: diagnostic,
+	}
 }
