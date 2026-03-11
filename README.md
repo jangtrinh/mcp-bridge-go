@@ -158,6 +158,26 @@ All configuration via environment variables — zero config files:
 
 > **💡 Works with any Electron-based AI IDE** that has a keyboard shortcut to open a chat panel.
 
+### Use with Paperclip (Full Workflow)
+
+This repo includes a Paperclip adapter script at `scripts/paperclip-adapter.sh`. It redirects Paperclip's Claude adapter to Gemini CLI instead — giving you **zero-cost orchestration**.
+
+**Step 1:** Build MCP Bridge and configure Gemini CLI (see above).
+
+**Step 2:** In Paperclip, set the agent command to the adapter script:
+
+```
+/path/to/mcp-bridge-go/scripts/paperclip-adapter.sh
+```
+
+**Step 3:** The full flow is now:
+
+```
+Paperclip (CEO) → paperclip-adapter.sh → Gemini CLI (free) → MCP Bridge → Antigravity
+```
+
+> **💡 Why the adapter?** Paperclip's built-in adapter hardcodes Claude-specific flags. The adapter script ignores those flags and forwards the prompt to Gemini CLI instead, which has MCP Bridge configured as an MCP server.
+
 ### Add to Gemini CLI
 
 `~/.gemini/settings.json`:
