@@ -315,3 +315,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for code standards and PR guidelines.
 ## 📄 License
 
 MIT © 2026 Jang Trinh
+
+---
+
+<p align="center">
+  Built by the founder of <a href="https://easeui.design/"><strong>EaseUI</strong></a> — an AI-powered design tool that generates production-ready UI from text prompts.
+</p>
