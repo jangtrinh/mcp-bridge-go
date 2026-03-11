@@ -279,13 +279,15 @@ func getWorkspaceChanges(workspace string) string {
 }
 
 // waitForChanges polls git status until either the workspace changes or the
-// deadline expires. On timeout, it returns diagnostic context about the app
-// and workspace state to help the caller decide what to do next.
+// deadline expires. After detecting a change, it performs a stability check:
+// polling git status multiple consecutive times to ensure the IDE has fully
+// stopped writing before reading the diff.
 func waitForChanges(ctx context.Context, cfg Config, workspace, initialStatus string, waitSecs int) waitResult {
 	const (
-		initialDelay = 5 * time.Second
-		pollInterval = 3 * time.Second
-		settleDelay  = 3 * time.Second
+		initialDelay        = 5 * time.Second
+		pollInterval        = 3 * time.Second
+		settleInterval      = 2 * time.Second
+		stableChecksRequired = 3
 	)
 
 	// Wait for app to start processing.
@@ -303,11 +305,41 @@ func waitForChanges(ctx context.Context, cfg Config, workspace, initialStatus st
 		default:
 		}
 
-		if current := gitStatus(workspace); current != initialStatus {
-			time.Sleep(settleDelay) // Let writes finish.
+		current := gitStatus(workspace)
+		if current != initialStatus {
+			// Change detected — run stability check.
+			// Keep polling until git status is unchanged for N consecutive checks.
+			slog.Info("change detected, starting stability check")
+			stableCount := 0
+			lastStatus := current
+
+			for stableCount < stableChecksRequired && time.Now().Before(deadline) {
+				select {
+				case <-ctx.Done():
+					return waitResult{Reason: "cancelled"}
+				default:
+				}
+
+				time.Sleep(settleInterval)
+				newStatus := gitStatus(workspace)
+
+				if newStatus == lastStatus {
+					stableCount++
+					slog.Debug("stability check pass",
+						"stable_count", stableCount,
+						"required", stableChecksRequired,
+					)
+				} else {
+					// Still changing — reset counter.
+					slog.Info("workspace still changing, resetting stability counter")
+					stableCount = 0
+					lastStatus = newStatus
+				}
+			}
+
 			return waitResult{
 				Detected: true,
-				Reason:   "File changes detected",
+				Reason:   "File changes detected (stable)",
 			}
 		}
 		time.Sleep(pollInterval)
