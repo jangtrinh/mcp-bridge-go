@@ -287,7 +287,7 @@ Recommended actions:
 | **Claude Agent Teams** | Claude agents via `@mentions` | Locked to Claude ecosystem |
 | **applescript-mcp** | Generic AppleScript MCP server | General-purpose, no AI-IDE-specific features |
 | **VS Code Subagents** | VS Code's native delegation | VS Code only, not cross-tool |
-| **MCP Bridge** | MCP-native, ~500 lines, cross-tool | macOS only, sequential, requires UI focus |
+| **MCP Bridge** | MCP-native, ~560 lines, cross-tool | macOS only, sequential, requires UI focus |
 
 **MCP Bridge is for you if:** You want a tiny, composable MCP tool that connects any MCP client to any Electron-based AI IDE — especially if you're optimizing for free-tier models as orchestrators.
 

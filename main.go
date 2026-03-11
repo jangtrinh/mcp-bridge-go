@@ -303,9 +303,9 @@ func getWorkspaceChanges(workspace string) string {
 // stopped writing before reading the diff.
 func waitForChanges(ctx context.Context, cfg Config, workspace, initialStatus string, waitSecs int) waitResult {
 	const (
-		initialDelay        = 5 * time.Second
-		pollInterval        = 3 * time.Second
-		settleInterval      = 2 * time.Second
+		initialDelay         = 5 * time.Second
+		pollInterval         = 3 * time.Second
+		settleInterval       = 2 * time.Second
 		stableChecksRequired = 3
 	)
 
