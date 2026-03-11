@@ -215,32 +215,51 @@ func sendPrompt(cfg Config, prompt string) error {
 // ─── GIT HELPERS ────────────────────────────────────────────────
 
 // gitCmd runs a git command in the given workspace and returns stdout.
-// Returns empty string on any error (git not installed, not a repo, etc.).
-func gitCmd(workspace string, args ...string) string {
+// Returns an error if the command fails (git not installed, not a repo, etc.).
+func gitCmd(workspace string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...) // #nosec G204 — git invoked with controlled args
 	cmd.Dir = workspace
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		return "", fmt.Errorf("git %s: %w (output: %s)", args[0], err, strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// gitCmdSafe runs a git command and returns the output, logging and returning
+// empty string on error. Use when errors are non-critical (reporting, display).
+func gitCmdSafe(workspace string, args ...string) string {
+	out, err := gitCmd(workspace, args...)
+	if err != nil {
+		slog.Warn("git command failed", "args", args, "error", err)
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return out
 }
 
 // gitStatus returns the porcelain status of the workspace (one line per changed file).
-func gitStatus(workspace string) string {
+// Returns an error if git fails, allowing callers to distinguish "clean" from "broken".
+func gitStatus(workspace string) (string, error) {
 	return gitCmd(workspace, "status", "--porcelain")
 }
 
 // getWorkspaceChanges compiles a comprehensive workspace report:
 // file status, diff (capped at 5KB), untracked file previews, and recent commits.
+// Uses git repo root for file paths to handle subdirectory workspaces correctly.
 func getWorkspaceChanges(workspace string) string {
 	var parts []string
 
-	if status := gitCmd(workspace, "status", "--short"); status != "" {
+	// Resolve repo root — git returns paths relative to this, not to workspace.
+	repoRoot := gitCmdSafe(workspace, "rev-parse", "--show-toplevel")
+	if repoRoot == "" {
+		repoRoot = workspace // Fallback if rev-parse fails.
+	}
+
+	if status := gitCmdSafe(workspace, "status", "--short"); status != "" {
 		parts = append(parts, "=== File Status ===\n"+status)
 	}
 
-	if diff := gitCmd(workspace, "diff"); diff != "" {
+	if diff := gitCmdSafe(workspace, "diff"); diff != "" {
 		const maxDiffBytes = 5000
 		if len(diff) > maxDiffBytes {
 			diff = diff[:maxDiffBytes] + "\n... (truncated)"
@@ -248,14 +267,14 @@ func getWorkspaceChanges(workspace string) string {
 		parts = append(parts, "=== Changes (diff) ===\n"+diff)
 	}
 
-	if untracked := gitCmd(workspace, "ls-files", "--others", "--exclude-standard"); untracked != "" {
+	if untracked := gitCmdSafe(workspace, "ls-files", "--others", "--exclude-standard"); untracked != "" {
 		files := strings.Split(untracked, "\n")
 		var previews []string
 		for _, f := range files {
 			if f == "" {
 				continue
 			}
-			fullPath := filepath.Join(workspace, filepath.Clean(f))
+			fullPath := filepath.Join(repoRoot, filepath.Clean(f))
 			content, err := os.ReadFile(fullPath) // #nosec G304 — workspace is user-configured
 			if err != nil {
 				previews = append(previews, fmt.Sprintf("--- %s --- (unreadable)", f))
@@ -271,7 +290,7 @@ func getWorkspaceChanges(workspace string) string {
 		parts = append(parts, "=== New Files ===\n"+strings.Join(previews, "\n\n"))
 	}
 
-	if recentLog := gitCmd(workspace, "log", "--oneline", "-3", "--format=%h %s (%cr)"); recentLog != "" {
+	if recentLog := gitCmdSafe(workspace, "log", "--oneline", "-3", "--format=%h %s (%cr)"); recentLog != "" {
 		parts = append(parts, "=== Recent Commits ===\n"+recentLog)
 	}
 
@@ -305,7 +324,12 @@ func waitForChanges(ctx context.Context, cfg Config, workspace, initialStatus st
 		default:
 		}
 
-		current := gitStatus(workspace)
+		current, err := gitStatus(workspace)
+		if err != nil {
+			slog.Warn("git status failed during poll, retrying", "error", err)
+			time.Sleep(pollInterval)
+			continue
+		}
 		if current != initialStatus {
 			// Change detected — run stability check.
 			// Keep polling until git status is unchanged for N consecutive checks.
@@ -321,7 +345,11 @@ func waitForChanges(ctx context.Context, cfg Config, workspace, initialStatus st
 				}
 
 				time.Sleep(settleInterval)
-				newStatus := gitStatus(workspace)
+				newStatus, err := gitStatus(workspace)
+				if err != nil {
+					slog.Warn("git status failed during stability check", "error", err)
+					continue
+				}
 
 				if newStatus == lastStatus {
 					stableCount++
@@ -356,7 +384,7 @@ func waitForChanges(ctx context.Context, cfg Config, workspace, initialStatus st
 	}
 
 	workspaceState := "clean (no uncommitted changes)"
-	if gitStatus(workspace) != "" {
+	if s, err := gitStatus(workspace); err == nil && s != "" {
 		workspaceState = "has uncommitted changes (same as before prompt)"
 	}
 
@@ -396,7 +424,11 @@ func handleSendToApp(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 	}
 
 	// Step 2: Snapshot workspace before sending.
-	initialStatus := gitStatus(workspace)
+	initialStatus, err := gitStatus(workspace)
+	if err != nil {
+		slog.Warn("git status failed for initial snapshot, using empty baseline", "error", err)
+		initialStatus = ""
+	}
 
 	// Step 3: Send prompt via AppleScript UI automation.
 	if err := sendPrompt(cfg, prompt); err != nil {
