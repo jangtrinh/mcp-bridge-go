@@ -160,11 +160,23 @@ All configuration via environment variables — zero config files:
 
 ### Use with Paperclip (Full Workflow)
 
-This repo includes a Paperclip adapter script at `scripts/paperclip-adapter.sh`. It redirects Paperclip's Claude adapter to Gemini CLI instead — giving you **zero-cost orchestration**.
+This repo includes [`scripts/paperclip-adapter.sh`](scripts/paperclip-adapter.sh) — a drop-in adapter that connects [Paperclip](https://github.com/paperclipai/paperclip) to Gemini CLI for **zero-cost orchestration**.
 
-**Step 1:** Build MCP Bridge and configure Gemini CLI (see above).
+#### What the adapter does
 
-**Step 2:** In Paperclip, set the agent command to the adapter script:
+Paperclip's built-in agent adapter is designed for Claude Code — it passes Claude-specific flags (`--print`, `--verbose`, `--max-turns`, `--add-dir`, etc.) that Gemini CLI doesn't understand. The adapter script:
+
+1. **Ignores** all Claude-specific positional args
+2. **Reads** the prompt from stdin (which Paperclip provides)
+3. **Forwards** it to Gemini CLI with the right flags (`--yolo`, `--output-format stream-json`)
+
+This means Paperclip thinks it's talking to Claude Code, but it's actually routing through Gemini CLI (free tier) instead.
+
+#### Setup
+
+**Step 1:** Build MCP Bridge and add it to Gemini CLI's `~/.gemini/settings.json` (see [Add to Gemini CLI](#add-to-gemini-cli) above).
+
+**Step 2:** In Paperclip, set the agent command to the adapter:
 
 ```
 /path/to/mcp-bridge-go/scripts/paperclip-adapter.sh
@@ -174,9 +186,14 @@ This repo includes a Paperclip adapter script at `scripts/paperclip-adapter.sh`.
 
 ```
 Paperclip (CEO) → paperclip-adapter.sh → Gemini CLI (free) → MCP Bridge → Antigravity
+     │                    │                      │                    │
+     │                    │                      │                    └── Writes code, edits files
+     │                    │                      └── Has MCP Bridge as MCP server
+     │                    └── Translates Claude flags → Gemini flags
+     └── Sends heartbeat with prompt on stdin
 ```
 
-> **💡 Why the adapter?** Paperclip's built-in adapter hardcodes Claude-specific flags. The adapter script ignores those flags and forwards the prompt to Gemini CLI instead, which has MCP Bridge configured as an MCP server.
+> **💡 Cost:** Paperclip (self-hosted, free) + Gemini CLI (free tier, 1,000 req/day) + MCP Bridge (local binary) = **$0 orchestration cost**.
 
 ### Add to Gemini CLI
 
