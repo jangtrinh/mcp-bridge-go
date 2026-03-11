@@ -14,9 +14,11 @@
 </p>
 
 <p align="center">
+  <a href="#-motivation">Motivation</a> ·
   <a href="#-use-cases">Use Cases</a> ·
   <a href="#-quick-start">Quick Start</a> ·
   <a href="#-mcp-tools">API</a> ·
+  <a href="#-alternatives">Alternatives</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -24,11 +26,15 @@
 
 ## 💡 Motivation
 
-We use [Paperclip](https://github.com/paperclipai/paperclip) to orchestrate AI agent teams — but Paperclip's adapters default to **Claude Code**, which burns through paid API tokens fast on routine tasks like delegation, status checks, and simple coordination.
+Modern AI-assisted development involves **multiple AI tools** — but they can't talk to each other. You use Gemini CLI for quick tasks, Antigravity for deep coding, Claude Desktop for review — and **you're the manual copy-paste bridge**.
 
-**The insight:** Most orchestration tasks don't need a frontier model. They need a reliable, fast model with a generous free tier.
+We hit this exact problem trying to adopt [Paperclip](https://github.com/paperclipai/paperclip) for AI agent orchestration:
 
-**The solution:** Use **Gemini CLI** (free tier, 2.5 Pro) as the orchestrator brain, and **MCP Bridge** to delegate heavy coding tasks to specialized AI IDEs (Antigravity, Cursor, etc.) that have their own model access.
+**Problem 1: Paperclip doesn't support Antigravity.** It has adapters for Claude Code, Codex, and Cursor — but not Antigravity. We needed a bridge.
+
+**Problem 2: API costs.** Paperclip's default adapter uses Claude Code, which burns through paid tokens fast on simple routing and coordination tasks. Most orchestration doesn't need a frontier model — it needs a reliable, fast model with a generous free tier.
+
+**The solution:**
 
 ```
 ┌─────────────┐    Paperclip     ┌─────────────┐     MCP Bridge     ┌──────────────┐
@@ -37,31 +43,18 @@ We use [Paperclip](https://github.com/paperclipai/paperclip) to orchestrate AI a
 └─────────────┘                  └─────────────┘                    └──────────────┘
                                   🆓 Free tokens                     🧠 Deep coding
                                   ⚡ Fast routing                    📝 File changes
-                                  🔧 Task mgmt                      🔍 Git diffs
+                                  🔧 Coordination                    🔍 Git diffs
 ```
 
-**Result:** Paperclip orchestrates. Gemini routes for free. Antigravity does the heavy lifting. **Zero API cost for orchestration.**
+**Gemini CLI** (free tier — 1,000 req/day, 2.5 Pro) handles orchestration and routing. **MCP Bridge** delegates heavy coding to Antigravity (or Cursor/Windsurf). **Zero API cost for the orchestration layer.**
 
 ---
 
 ## 🎯 Use Cases
 
-### 1. Gemini CLI → Antigravity Delegation
+### 1. Paperclip → Gemini CLI → Antigravity (Our Setup)
 
-You're using Gemini CLI for orchestration but want Antigravity to handle complex code generation:
-
-```
-You (to Gemini CLI): "Refactor the auth module to use JWT tokens"
-  └─► Gemini CLI calls send_to_app with the prompt
-       └─► MCP Bridge pastes the prompt into Antigravity's chat
-            └─► Antigravity processes the task, edits files
-                 └─► MCP Bridge detects git changes, returns diff to Gemini
-                      └─► Gemini reviews the changes and reports back
-```
-
-### 2. Multi-Agent Company with Paperclip
-
-Use Paperclip to run AI agent companies where a CEO agent delegates coding tasks:
+The workflow that inspired this project — using Paperclip for agent companies with Gemini as the free orchestrator:
 
 ```
 Paperclip CEO Agent
@@ -70,6 +63,21 @@ Paperclip CEO Agent
             └─► Antigravity writes the code
                  └─► CTO reviews via check_workspace_changes
                       └─► Reports completion back to CEO
+```
+
+**Why this works:** Paperclip doesn't support Antigravity natively. Gemini CLI is free. MCP Bridge fills the gap.
+
+### 2. Gemini CLI → Any AI IDE
+
+Direct delegation without Paperclip — use Gemini CLI as your orchestrator:
+
+```
+You (to Gemini CLI): "Refactor the auth module to use JWT tokens"
+  └─► Gemini calls send_to_app with the prompt
+       └─► MCP Bridge pastes the prompt into Antigravity
+            └─► Antigravity processes the task, edits files
+                 └─► MCP Bridge detects git changes, returns diff
+                      └─► Gemini reviews and reports back
 ```
 
 ### 3. Cross-IDE Code Review
@@ -88,13 +96,10 @@ Claude Desktop
 Chain delegations — planning in one tool, implementation in another:
 
 ```
-Orchestrator AI
-  ├── Step 1: send_to_app → "Plan the database schema"
-  │    └─► Reviews the plan from the diff
-  ├── Step 2: send_to_app → "Implement the schema"
-  │    └─► Verifies implementation matches plan
-  └── Step 3: send_to_app → "Write tests for the DB layer"
-       └─► Final verification
+Orchestrator
+  ├── Step 1: "Plan the database schema" → reviews diff
+  ├── Step 2: "Implement the schema" → verifies output
+  └── Step 3: "Write tests for the DB layer" → final check
 ```
 
 ---
@@ -214,6 +219,22 @@ Checks current workspace state without sending a prompt.
 | `workspacePath` | — | `MCP_BRIDGE_WORKSPACE` | Workspace to check |
 
 **Returns:** Git status, diff (≤5KB), untracked file previews (≤500 chars each), and 3 most recent commits.
+
+---
+
+## 🔄 Alternatives
+
+We built MCP Bridge because nothing else fit our exact needs. Here's how it compares:
+
+| Tool | Approach | Trade-off |
+|------|----------|-----------|
+| **SimulateDev** | Full workflow engine, AppleScript-based | Heavier — full Planner/Coder/Tester pipeline, not a simple MCP tool |
+| **Claude Code Agent Teams** | Claude agents coordinate via `@mentions` | Locked to Claude ecosystem, doesn't bridge across tools |
+| **applescript-mcp** | Generic AppleScript MCP server | General-purpose (Finder, Mail, etc.) — not AI-IDE-specific, no git monitoring |
+| **VS Code Subagents** | VS Code's native delegation feature | VS Code ecosystem only, not cross-tool |
+| **MCP Bridge** | MCP-native, 300 lines, cross-tool | macOS only, requires UI focus, sequential |
+
+**MCP Bridge is for you if:** You want a tiny, composable MCP tool that connects any MCP client to any Electron-based AI IDE — especially if you're optimizing for free-tier models as orchestrators.
 
 ---
 
