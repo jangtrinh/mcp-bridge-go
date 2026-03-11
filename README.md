@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.23-00ADD8?style=flat-square&logo=go&logoColor=white" />
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white" />
   <img src="https://img.shields.io/badge/MCP-stdio-blue?style=flat-square" />
   <img src="https://img.shields.io/badge/macOS-AppleScript-black?style=flat-square&logo=apple&logoColor=white" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
@@ -18,6 +18,7 @@
   <a href="#-use-cases">Use Cases</a> ·
   <a href="#-quick-start">Quick Start</a> ·
   <a href="#-mcp-tools">API</a> ·
+  <a href="#-known-limitations">Limitations</a> ·
   <a href="#-alternatives">Alternatives</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
@@ -46,7 +47,7 @@ We hit this exact problem trying to adopt [Paperclip](https://github.com/papercl
                                   🔧 Coordination                    🔍 Git diffs
 ```
 
-**Gemini CLI** (free tier — 1,000 req/day, 2.5 Pro) handles orchestration and routing. **MCP Bridge** delegates heavy coding to Antigravity (or Cursor/Windsurf). **Zero API cost for the orchestration layer.**
+**Gemini CLI** (free tier — 1,000 req/day, Gemini 2.5 Pro) handles orchestration and routing. **MCP Bridge** delegates heavy coding to Antigravity (or Cursor/Windsurf). **Zero API cost for the orchestration layer.**
 
 ---
 
@@ -135,8 +136,10 @@ Orchestrator
 ```sh
 git clone https://github.com/jangtrinh/mcp-bridge-go.git
 cd mcp-bridge-go
-go build -o mcp-bridge .
+make build
 ```
+
+This compiles the binary with embedded version info (commit hash, build date) via `ldflags`.
 
 ### Configure
 
@@ -174,7 +177,7 @@ This means Paperclip thinks it's talking to Claude Code, but it's actually routi
 
 #### Setup
 
-**Step 1:** Build MCP Bridge and add it to Gemini CLI's `~/.gemini/settings.json` (see [Add to Gemini CLI](#add-to-gemini-cli) above).
+**Step 1:** Build MCP Bridge and add it to Gemini CLI's `~/.gemini/settings.json` (see [Add to Gemini CLI](#add-to-gemini-cli) below).
 
 **Step 2:** In Paperclip, set the agent command to the adapter:
 
@@ -245,7 +248,9 @@ Sends a prompt to the target application and waits for workspace changes.
 | `workspacePath` | — | `MCP_BRIDGE_WORKSPACE` | Workspace to monitor |
 | `waitSeconds` | — | `120` | Max wait time (seconds) |
 
-**Returns:** Markdown result with prompt echo, change detection status, and full workspace diff.
+**On success:** Returns markdown with prompt echo, change status, and full workspace diff.
+
+**On timeout:** Returns diagnostic report — app state (running/frontmost), workspace state, and recommended next actions. See [Timeout Diagnostics](#timeout-diagnostics) below.
 
 ### `check_workspace_changes`
 
@@ -259,6 +264,51 @@ Checks current workspace state without sending a prompt.
 
 ---
 
+## ⚠️ Known Limitations
+
+### Git Polling as Completion Signal
+
+MCP Bridge uses `git status` to detect when the target AI has finished its work. This is the biggest architectural trade-off:
+
+| Scenario | Git status | Bridge behavior |
+|----------|-----------|----------------|
+| AI writes code | Changes | ✅ Returns diff |
+| AI asks a clarifying question | No changes | ⏱ Timeout with diagnostic |
+| AI says "no changes needed" | No changes | ⏱ Timeout with diagnostic |
+| AI crashes | No changes | ⏱ Timeout with diagnostic |
+
+**Why?** Antigravity (and similar IDEs) don't expose an API to read AI responses. The GUI is the only interface. Git polling detects *side effects* (file changes) but is blind to *text responses*.
+
+#### Timeout Diagnostics
+
+When no changes are detected, MCP Bridge returns an informative diagnostic instead of failing silently:
+
+```
+⏱ Prompt sent to Antigravity but no file changes detected after 120s.
+
+Diagnostic:
+- Antigravity: running and frontmost (may still be processing or waiting for input)
+- Workspace: clean (no uncommitted changes)
+- Wait time: 120s
+
+Recommended actions:
+- The AI may have responded with a question or explanation (no code changes)
+- Try sending a more specific prompt
+- Use `check_workspace_changes` to verify current state
+- Increase `waitSeconds` if the task is complex
+```
+
+This shifts the decision-making to the caller (Gemini CLI / Claude), which can retry with a more specific prompt or report the ambiguity.
+
+### Other Limitations
+
+- **macOS only** — AppleScript is not available on other platforms
+- **Requires UI focus** — target app comes to foreground during submission
+- **Sequential only** — one prompt at a time (needs app focus)
+- **No response content** — captures file changes, not the AI's text response
+
+---
+
 ## 🔄 Alternatives
 
 We built MCP Bridge because nothing else fit our exact needs. Here's how it compares:
@@ -269,33 +319,32 @@ We built MCP Bridge because nothing else fit our exact needs. Here's how it comp
 | **Claude Code Agent Teams** | Claude agents coordinate via `@mentions` | Locked to Claude ecosystem, doesn't bridge across tools |
 | **applescript-mcp** | Generic AppleScript MCP server | General-purpose (Finder, Mail, etc.) — not AI-IDE-specific, no git monitoring |
 | **VS Code Subagents** | VS Code's native delegation feature | VS Code ecosystem only, not cross-tool |
-| **MCP Bridge** | MCP-native, 300 lines, cross-tool | macOS only, requires UI focus, sequential |
+| **MCP Bridge** | MCP-native, ~350 lines, cross-tool | macOS only, requires UI focus, sequential |
 
 **MCP Bridge is for you if:** You want a tiny, composable MCP tool that connects any MCP client to any Electron-based AI IDE — especially if you're optimizing for free-tier models as orchestrators.
 
 ---
 
+## 🛠️ Development
+
+### Quality Gates
+
+```sh
+make audit    # Runs: gofmt → go vet → golangci-lint → gosec → go build
+make build    # Compile with version/commit/date via ldflags
+make lint     # Static analysis only
+make clean    # Remove binary
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for code standards, architecture principles, and PR guidelines.
+
 ## 📋 Requirements
 
 - **macOS** — uses AppleScript for UI automation
-- **Go 1.23+** — to build from source
+- **Go 1.26+** — to build from source
 - **Git** — for workspace change detection
 - Target app must be **open** with a workspace loaded
 - **Accessibility permissions** — System Settings → Privacy & Security → Accessibility → enable your terminal/MCP client
-
-## ⚠️ Limitations
-
-- **macOS only** — AppleScript is not available on other platforms
-- **Requires UI focus** — target app comes to foreground during submission
-- **Git-based detection** — only works in git-tracked workspaces
-- **No response content** — captures file changes, not the AI's text response
-- **Sequential only** — one prompt at a time (needs app focus)
-
----
-
-## 🤝 Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines, code standards, and quality gates.
 
 ## 📄 License
 

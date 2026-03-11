@@ -18,7 +18,7 @@ MCP_BRIDGE_APP=Antigravity ./mcp-bridge
 
 ### Prerequisites
 
-- Go 1.23+
+- Go 1.26+
 - macOS (AppleScript dependency)
 - Git
 
