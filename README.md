@@ -10,32 +10,58 @@
 <p align="center">
   <strong>Lightweight MCP server that bridges AI coding tools via macOS automation.</strong>
   <br/>
-  <sub>Send prompts to any Electron-based AI IDE and monitor workspace changes — all through the MCP protocol.</sub>
+  <sub>Send prompts to any Electron-based AI IDE and get back git diffs — all through the MCP protocol.</sub>
 </p>
 
 <p align="center">
-  <a href="#-motivation">Motivation</a> ·
-  <a href="#-use-cases">Use Cases</a> ·
+  <a href="#-the-problem">Problem</a> ·
+  <a href="#-the-hack-paperclip--gemini-cli">The Hack</a> ·
+  <a href="#-how-it-works">How It Works</a> ·
   <a href="#-quick-start">Quick Start</a> ·
   <a href="#-mcp-tools">API</a> ·
-  <a href="#-known-limitations">Limitations</a> ·
-  <a href="#-alternatives">Alternatives</a> ·
-  <a href="CONTRIBUTING.md">Contributing</a>
+  <a href="#%EF%B8%8F-known-limitations">Limitations</a>
 </p>
 
 ---
 
-## 💡 Motivation
+## 💡 The Problem
 
-Modern AI-assisted development involves **multiple AI tools** — but they can't talk to each other. You use Gemini CLI for quick tasks, Antigravity for deep coding, Claude Desktop for review — and **you're the manual copy-paste bridge**.
+Modern AI-assisted development involves **multiple AI tools** — but they can't talk to each other. You use Gemini CLI for quick tasks, Antigravity for deep coding, Claude Desktop for review — and **you're the manual copy-paste bridge** between them.
 
-We hit this exact problem trying to adopt [Paperclip](https://github.com/paperclipai/paperclip) for AI agent orchestration:
+We hit this trying to adopt [Paperclip](https://github.com/paperclipai/paperclip) for AI agent orchestration:
 
-**Problem 1: Paperclip doesn't support Antigravity.** It has adapters for Claude Code, Codex, and Cursor — but not Antigravity. We needed a bridge.
+- **Paperclip doesn't support Antigravity.** It ships adapters for Claude Code, Codex, and Cursor — but not Antigravity.
+- **API costs kill you.** Paperclip's default adapter uses Claude Code, which burns paid tokens on trivial routing tasks. Most orchestration doesn't need a frontier model.
 
-**Problem 2: API costs.** Paperclip's default adapter uses Claude Code, which burns through paid tokens fast on simple routing and coordination tasks. Most orchestration doesn't need a frontier model — it needs a reliable, fast model with a generous free tier.
+---
 
-**The solution:**
+## 🔧 The Hack: Paperclip → Gemini CLI
+
+This is the fun part. Paperclip's agent adapter is **hardcoded for Claude Code** — it calls the agent binary with Claude-specific flags:
+
+```
+claude --print --verbose --max-turns 10 --add-dir /path/to/workspace "Do the task"
+```
+
+Gemini CLI doesn't understand any of these flags. It would just crash.
+
+**The hack:** a 25-line shell script that pretends to be Claude.
+
+```bash
+#!/bin/bash
+# Paperclip thinks it's calling Claude Code.
+# It's not. It's calling Gemini CLI.
+
+# Ignore ALL Claude-specific args ($@). Read prompt from stdin.
+PROMPT=$(cat)
+
+# Forward to Gemini CLI with Gemini-native flags
+exec gemini --prompt "$PROMPT" --yolo --output-format stream-json
+```
+
+That's it. Paperclip sends a heartbeat with the prompt on stdin + Claude flags as positional args. The wrapper **ignores** the args and **pipes** stdin straight to Gemini CLI. Paperclip has no idea it's talking to a different model.
+
+### Why this matters
 
 ```
 ┌─────────────┐    Paperclip     ┌─────────────┐     MCP Bridge     ┌──────────────┐
@@ -47,61 +73,15 @@ We hit this exact problem trying to adopt [Paperclip](https://github.com/papercl
                                   🔧 Coordination                    🔍 Git diffs
 ```
 
-**Gemini CLI** (free tier — 1,000 req/day, Gemini 2.5 Pro) handles orchestration and routing. **MCP Bridge** delegates heavy coding to Antigravity (or Cursor/Windsurf). **Zero API cost for the orchestration layer.**
+| Layer | What | Cost |
+|-------|------|------|
+| **Paperclip** | Task management, agent governance | Free (self-hosted) |
+| **gemini-wrapper.sh** | The 25-line hack — translates Claude → Gemini | Free |
+| **Gemini CLI** | AI orchestration via Gemini 2.5 Pro | Free (1,000 req/day) |
+| **MCP Bridge** | macOS automation + git polling | Free (local binary) |
+| **Antigravity** | The actual coding | Your subscription |
 
----
-
-## 🎯 Use Cases
-
-### 1. Paperclip → Gemini CLI → Antigravity (Our Setup)
-
-The workflow that inspired this project — using Paperclip for agent companies with Gemini as the free orchestrator:
-
-```
-Paperclip CEO Agent
-  └─► Assigns task to CTO agent (Gemini CLI, free tier)
-       └─► CTO uses MCP Bridge to delegate to Antigravity
-            └─► Antigravity writes the code
-                 └─► CTO reviews via check_workspace_changes
-                      └─► Reports completion back to CEO
-```
-
-**Why this works:** Paperclip doesn't support Antigravity natively. Gemini CLI is free. MCP Bridge fills the gap.
-
-### 2. Gemini CLI → Any AI IDE
-
-Direct delegation without Paperclip — use Gemini CLI as your orchestrator:
-
-```
-You (to Gemini CLI): "Refactor the auth module to use JWT tokens"
-  └─► Gemini calls send_to_app with the prompt
-       └─► MCP Bridge pastes the prompt into Antigravity
-            └─► Antigravity processes the task, edits files
-                 └─► MCP Bridge detects git changes, returns diff
-                      └─► Gemini reviews and reports back
-```
-
-### 3. Cross-IDE Code Review
-
-Use one AI tool to review another's work:
-
-```
-Claude Desktop
-  └─► Sends coding task to Cursor via MCP Bridge
-       └─► Cursor generates the code
-            └─► Claude reads the diff and provides feedback
-```
-
-### 4. Automated Task Pipelines
-
-Chain delegations — planning in one tool, implementation in another:
-
-```
-Orchestrator
-  ├── Step 1: "Plan the database schema" → reviews diff
-  ├── Step 2: "Implement the schema" → verifies output
-  └── Step 3: "Write tests for the DB layer" → final check
-```
+**Total orchestration cost: $0/day for up to 1,000 tasks.**
 
 ---
 
@@ -124,8 +104,18 @@ Orchestrator
 | **1. Clipboard** | Copies prompt via `pbcopy` |
 | **2. Activate** | Brings target app to foreground via AppleScript |
 | **3. Chat** | Opens chat panel (`Cmd+shortcut`), clears, pastes, Enter |
-| **4. Poll** | Watches `git status --porcelain` for changes |
-| **5. Report** | Returns diff, file status, and new file previews |
+| **4. Poll** | Watches `git status --porcelain` until changes appear |
+| **5. Stability check** | After detecting changes, polls 3 more times to confirm IDE stopped writing |
+| **6. Report** | Returns diff, file status, and new file previews |
+
+### Stability Check
+
+A naive approach would read the diff as soon as `git status` changes — but the IDE might still be writing files. MCP Bridge uses an **active stability check**: after detecting changes, it polls `git status` 3 consecutive times (every 2s). Only when the status is identical across all 3 checks does it consider the IDE done. If the status keeps changing, the counter resets.
+
+```
+Change detected → poll #1 (2s) → same? ✓ → poll #2 (2s) → same? ✓ → poll #3 (2s) → same? ✓ → STABLE → read diff
+                                  └─ different? → reset counter, keep polling
+```
 
 ---
 
@@ -138,8 +128,6 @@ git clone https://github.com/jangtrinh/mcp-bridge-go.git
 cd mcp-bridge-go
 make build
 ```
-
-This compiles the binary with embedded version info (commit hash, build date) via `ldflags`.
 
 ### Configure
 
@@ -160,43 +148,6 @@ All configuration via environment variables — zero config files:
 | Windsurf | `Windsurf` | `l` |
 
 > **💡 Works with any Electron-based AI IDE** that has a keyboard shortcut to open a chat panel.
-
-### Use with Paperclip (Full Workflow)
-
-This repo includes [`scripts/paperclip-adapter.sh`](scripts/paperclip-adapter.sh) — a drop-in adapter that connects [Paperclip](https://github.com/paperclipai/paperclip) to Gemini CLI for **zero-cost orchestration**.
-
-#### What the adapter does
-
-Paperclip's built-in agent adapter is designed for Claude Code — it passes Claude-specific flags (`--print`, `--verbose`, `--max-turns`, `--add-dir`, etc.) that Gemini CLI doesn't understand. The adapter script:
-
-1. **Ignores** all Claude-specific positional args
-2. **Reads** the prompt from stdin (which Paperclip provides)
-3. **Forwards** it to Gemini CLI with the right flags (`--yolo`, `--output-format stream-json`)
-
-This means Paperclip thinks it's talking to Claude Code, but it's actually routing through Gemini CLI (free tier) instead.
-
-#### Setup
-
-**Step 1:** Build MCP Bridge and add it to Gemini CLI's `~/.gemini/settings.json` (see [Add to Gemini CLI](#add-to-gemini-cli) below).
-
-**Step 2:** In Paperclip, set the agent command to the adapter:
-
-```
-/path/to/mcp-bridge-go/scripts/paperclip-adapter.sh
-```
-
-**Step 3:** The full flow is now:
-
-```
-Paperclip (CEO) → paperclip-adapter.sh → Gemini CLI (free) → MCP Bridge → Antigravity
-     │                    │                      │                    │
-     │                    │                      │                    └── Writes code, edits files
-     │                    │                      └── Has MCP Bridge as MCP server
-     │                    └── Translates Claude flags → Gemini flags
-     └── Sends heartbeat with prompt on stdin
-```
-
-> **💡 Cost:** Paperclip (self-hosted, free) + Gemini CLI (free tier, 1,000 req/day) + MCP Bridge (local binary) = **$0 orchestration cost**.
 
 ### Add to Gemini CLI
 
@@ -234,6 +185,27 @@ Paperclip (CEO) → paperclip-adapter.sh → Gemini CLI (free) → MCP Bridge �
 }
 ```
 
+### Use with Paperclip
+
+**Step 1:** Build MCP Bridge and add it to Gemini CLI (see above).
+
+**Step 2:** In Paperclip, set the agent command to the adapter:
+
+```
+/path/to/mcp-bridge-go/scripts/paperclip-adapter.sh
+```
+
+**Step 3:** Start Paperclip, open Antigravity with your project, assign a task. The full chain activates on the next heartbeat:
+
+```
+Paperclip CEO → paperclip-adapter.sh → Gemini CLI (free) → MCP Bridge → Antigravity
+     │                   │                     │                   │
+     │                   │                     │                   └── Writes code, edits files
+     │                   │                     └── Has MCP Bridge as MCP server
+     │                   └── Ignores Claude flags, pipes stdin to Gemini
+     └── Sends heartbeat with prompt on stdin
+```
+
 ---
 
 ## 🔧 MCP Tools
@@ -250,7 +222,7 @@ Sends a prompt to the target application and waits for workspace changes.
 
 **On success:** Returns markdown with prompt echo, change status, and full workspace diff.
 
-**On timeout:** Returns diagnostic report — app state (running/frontmost), workspace state, and recommended next actions. See [Timeout Diagnostics](#timeout-diagnostics) below.
+**On timeout:** Returns diagnostic report — app state (running/frontmost), workspace state, and recommended next actions.
 
 ### `check_workspace_changes`
 
@@ -268,11 +240,11 @@ Checks current workspace state without sending a prompt.
 
 ### Git Polling as Completion Signal
 
-MCP Bridge uses `git status` to detect when the target AI has finished its work. This is the biggest architectural trade-off:
+MCP Bridge uses `git status` to detect when the target AI has finished. This is the biggest architectural trade-off:
 
 | Scenario | Git status | Bridge behavior |
 |----------|-----------|----------------|
-| AI writes code | Changes | ✅ Returns diff |
+| AI writes code | Changes | ✅ Stability check → returns diff |
 | AI asks a clarifying question | No changes | ⏱ Timeout with diagnostic |
 | AI says "no changes needed" | No changes | ⏱ Timeout with diagnostic |
 | AI crashes | No changes | ⏱ Timeout with diagnostic |
@@ -287,7 +259,7 @@ When no changes are detected, MCP Bridge returns an informative diagnostic inste
 ⏱ Prompt sent to Antigravity but no file changes detected after 120s.
 
 Diagnostic:
-- Antigravity: running and frontmost (may still be processing or waiting for input)
+- Antigravity: running and frontmost (may still be processing)
 - Workspace: clean (no uncommitted changes)
 - Wait time: 120s
 
@@ -297,8 +269,6 @@ Recommended actions:
 - Use `check_workspace_changes` to verify current state
 - Increase `waitSeconds` if the task is complex
 ```
-
-This shifts the decision-making to the caller (Gemini CLI / Claude), which can retry with a more specific prompt or report the ambiguity.
 
 ### Other Limitations
 
@@ -311,23 +281,19 @@ This shifts the decision-making to the caller (Gemini CLI / Claude), which can r
 
 ## 🔄 Alternatives
 
-We built MCP Bridge because nothing else fit our exact needs. Here's how it compares:
-
 | Tool | Approach | Trade-off |
 |------|----------|-----------|
-| **SimulateDev** | Full workflow engine, AppleScript-based | Heavier — full Planner/Coder/Tester pipeline, not a simple MCP tool |
-| **Claude Code Agent Teams** | Claude agents coordinate via `@mentions` | Locked to Claude ecosystem, doesn't bridge across tools |
-| **applescript-mcp** | Generic AppleScript MCP server | General-purpose (Finder, Mail, etc.) — not AI-IDE-specific, no git monitoring |
-| **VS Code Subagents** | VS Code's native delegation feature | VS Code ecosystem only, not cross-tool |
-| **MCP Bridge** | MCP-native, ~350 lines, cross-tool | macOS only, requires UI focus, sequential |
+| **SimulateDev** | Full workflow engine, AppleScript-based | Heavier — full Planner/Coder/Tester pipeline |
+| **Claude Agent Teams** | Claude agents via `@mentions` | Locked to Claude ecosystem |
+| **applescript-mcp** | Generic AppleScript MCP server | General-purpose, no AI-IDE-specific features |
+| **VS Code Subagents** | VS Code's native delegation | VS Code only, not cross-tool |
+| **MCP Bridge** | MCP-native, ~500 lines, cross-tool | macOS only, sequential, requires UI focus |
 
 **MCP Bridge is for you if:** You want a tiny, composable MCP tool that connects any MCP client to any Electron-based AI IDE — especially if you're optimizing for free-tier models as orchestrators.
 
 ---
 
 ## 🛠️ Development
-
-### Quality Gates
 
 ```sh
 make audit    # Runs: gofmt → go vet → golangci-lint → gosec → go build
@@ -336,7 +302,7 @@ make lint     # Static analysis only
 make clean    # Remove binary
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for code standards, architecture principles, and PR guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for code standards and PR guidelines.
 
 ## 📋 Requirements
 
