@@ -314,7 +314,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for code standards and PR guidelines.
 
 ## 📄 License
 
-MIT © 2026 Jang Trinh
+[PolyForm Shield 1.0.0](LICENSE) © 2026 Jang Trinh — free to use and modify; no resale or competing products.
 
 ---
 
