@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white" />
   <img src="https://img.shields.io/badge/MCP-stdio-blue?style=flat-square" />
   <img src="https://img.shields.io/badge/macOS-AppleScript-black?style=flat-square&logo=apple&logoColor=white" />
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
+  <img src="https://img.shields.io/badge/license-PolyForm_Shield_1.0.0-green?style=flat-square" />
 </p>
 
 <h1 align="center">🌉 MCP Bridge</h1>
