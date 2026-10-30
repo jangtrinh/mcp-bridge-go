@@ -316,6 +316,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for code standards and PR guidelines.
 
 [PolyForm Shield 1.0.0](LICENSE) © 2026 Jang Trinh — free to use and modify; no resale or competing products.
 
+## Listed on
+
+<p align="left">
+  <a href="https://mcpservers.org/servers/jangtrinh/mcp-bridge-go"><img src="https://mcpservers.org/badge.svg" alt="Listed on mcpservers.org" width="163" height="20"></a>
+</p>
+
 ---
 
 <p align="center">
