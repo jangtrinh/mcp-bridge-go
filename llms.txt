@@ -1,0 +1,30 @@
+# mcp-bridge-go
+
+> Go MCP server (stdio) that sends a prompt to an Electron-based AI IDE on macOS (Antigravity, Cursor, Windsurf) and returns the workspace git diff. Free, source-available under PolyForm Shield 1.0.0.
+
+## Documentation
+
+- [README](https://github.com/jangtrinh/mcp-bridge-go#readme): problem, how it works, configuration, tools and known limitations.
+- [CONTRIBUTING](https://github.com/jangtrinh/mcp-bridge-go/blob/main/CONTRIBUTING.md): code standards and PR guidelines.
+- [LICENSE](https://github.com/jangtrinh/mcp-bridge-go/blob/main/LICENSE): PolyForm Shield 1.0.0.
+
+## Tools
+
+- `send_to_app(prompt, workspacePath?, waitSeconds?)`: sends the prompt to the target app and waits for workspace changes (default 120 s).
+- `check_workspace_changes(workspacePath?)`: returns git status, diff (up to 5 KB), untracked previews and 3 recent commits.
+
+## Use with your agent
+
+- Build: `git clone https://github.com/jangtrinh/mcp-bridge-go.git && cd mcp-bridge-go && make build` (Go 1.26+, macOS).
+- Claude Code: `claude mcp add mcp-bridge --env MCP_BRIDGE_APP=Cursor --env MCP_BRIDGE_WORKSPACE=/path/to/project -- /path/to/mcp-bridge`.
+- Codex: add `[mcp_servers.mcp-bridge]` with `command` and an `env` table to `~/.codex/config.toml`.
+- Cursor: add the server under `mcpServers` in `~/.cursor/mcp.json`.
+- Configuration is environment variables only: `MCP_BRIDGE_APP`, `MCP_BRIDGE_SHORTCUT`, `MCP_BRIDGE_WORKSPACE`.
+
+## FAQ
+
+- Is it a Figma tool? No. For Figma see https://github.com/jangtrinh/design-os-figma-plugin.
+- Which OS? macOS only, because it drives the target app with AppleScript and needs Accessibility permission.
+- Does it run a model or need an API key? No.
+- How does it detect completion? It polls git for workspace changes.
+- Licence? Source-available under PolyForm Shield 1.0.0: free to use and modify, not for resale or building a competing product.

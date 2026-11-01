@@ -185,6 +185,34 @@ All configuration via environment variables — zero config files:
 }
 ```
 
+### Use with Claude Code, Cursor and Codex
+
+Any MCP client that can launch a stdio server can call `send_to_app` and `check_workspace_changes`. The server only automates the target app on **macOS**, so run it on a Mac.
+
+**Claude Code**
+
+```sh
+claude mcp add mcp-bridge \
+  --env MCP_BRIDGE_APP=Cursor \
+  --env MCP_BRIDGE_WORKSPACE=/path/to/your/project \
+  -- /path/to/mcp-bridge
+```
+
+**Codex** (`~/.codex/config.toml`)
+
+```toml
+[mcp_servers.mcp-bridge]
+command = "/path/to/mcp-bridge"
+
+[mcp_servers.mcp-bridge.env]
+MCP_BRIDGE_APP = "Cursor"
+MCP_BRIDGE_WORKSPACE = "/path/to/your/project"
+```
+
+**Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project): use the same `mcpServers` JSON as the Claude Desktop example above. Cursor can be both the MCP client and the app that receives the prompt, but pointing `MCP_BRIDGE_APP` at a different app (such as Antigravity) is the usual setup.
+
+Check that the server starts: pipe an MCP `initialize` request into `/path/to/mcp-bridge`; it replies with `serverInfo.name` set to `mcp-bridge`.
+
 ### Use with Paperclip
 
 **Step 1:** Build MCP Bridge and add it to Gemini CLI (see above).
@@ -276,6 +304,20 @@ Recommended actions:
 - **Requires UI focus** — target app comes to foreground during submission
 - **Sequential only** — one prompt at a time (needs app focus)
 - **No response content** — captures file changes, not the AI's text response
+
+---
+
+## FAQ
+
+**Is this a Figma tool?** No. It sends prompts to Electron-based AI IDEs (Antigravity, Cursor, Windsurf) and returns the resulting git diff. For Figma, see [design-os-figma-plugin](https://github.com/jangtrinh/design-os-figma-plugin).
+
+**Does it work on Linux or Windows?** No. It uses AppleScript for UI automation, so it needs macOS and Accessibility permission for your terminal or MCP client.
+
+**Does it use an API key or run a model?** No. It runs no model and makes no network calls of its own. The target app uses whatever model you configured there.
+
+**How does it know the task is done?** It polls git for workspace changes, so work that changes no files returns a timeout report. See [Known Limitations](#%EF%B8%8F-known-limitations).
+
+**What licence is it under?** Source-available under [PolyForm Shield 1.0.0](LICENSE): free to use and modify, but you may not resell it or build a competing product from it.
 
 ---
 
