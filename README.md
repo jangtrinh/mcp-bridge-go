@@ -1,127 +1,26 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white" />
-  <img src="https://img.shields.io/badge/MCP-stdio-blue?style=flat-square" />
-  <img src="https://img.shields.io/badge/macOS-AppleScript-black?style=flat-square&logo=apple&logoColor=white" />
-  <img src="https://img.shields.io/badge/license-PolyForm_Shield_1.0.0-green?style=flat-square" />
+# mcp-bridge-go
+
+<p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/cover-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/readme/cover-light.png">
+  <img src="docs/images/readme/cover-dark.png" alt="design:os by Jang" width="100%">
+</picture>
 </p>
 
-<h1 align="center">🌉 MCP Bridge</h1>
+A Go MCP server (stdio) that sends a prompt to an Electron-based AI IDE on macOS (Antigravity, Cursor or Windsurf) and returns the workspace git diff. The IDE must already be open, with a workspace loaded. mcp-bridge-go runs no model of its own and makes no network calls of its own.
 
-<p align="center">
-  <strong>Lightweight MCP server that bridges AI coding tools via macOS automation.</strong>
-  <br/>
-  <sub>Send prompts to any Electron-based AI IDE and get back git diffs — all through the MCP protocol.</sub>
+Two tools, named in `main.go`: `send_to_app` and `check_workspace_changes`. The default target app is Antigravity (`MCP_BRIDGE_APP`). Go 1.26, from `go.mod`.
+
+FREE + source-available ([PolyForm Shield 1.0.0](LICENSE)).
+
+<p>
+  <a href="#quickstart">Quickstart</a> · <a href="#how-it-works">How it works</a> · <a href="#tools">Tools</a> · <a href="#limits">Limits</a> · <a href="#faq">FAQ</a>
 </p>
 
-<p align="center">
-  <a href="#-the-problem">Problem</a> ·
-  <a href="#-the-hack-paperclip--gemini-cli">The Hack</a> ·
-  <a href="#-how-it-works">How It Works</a> ·
-  <a href="#-quick-start">Quick Start</a> ·
-  <a href="#-mcp-tools">API</a> ·
-  <a href="#%EF%B8%8F-known-limitations">Limitations</a>
-</p>
+This is not DESIGN:OS Bridge. Bridge is the plugin and CLI that reads and edits the Figma file you have open. See [jangtrinh/design-os-figma-plugin](https://github.com/jangtrinh/design-os-figma-plugin).
 
----
-
-## 💡 The Problem
-
-Modern AI-assisted development involves **multiple AI tools** — but they can't talk to each other. You use Gemini CLI for quick tasks, Antigravity for deep coding, Claude Desktop for review — and **you're the manual copy-paste bridge** between them.
-
-We hit this trying to adopt [Paperclip](https://github.com/paperclipai/paperclip) for AI agent orchestration:
-
-- **Paperclip doesn't support Antigravity.** It ships adapters for Claude Code, Codex, and Cursor — but not Antigravity.
-- **API costs kill you.** Paperclip's default adapter uses Claude Code, which burns paid tokens on trivial routing tasks. Most orchestration doesn't need a frontier model.
-
----
-
-## 🔧 The Hack: Paperclip → Gemini CLI
-
-This is the fun part. Paperclip's agent adapter is **hardcoded for Claude Code** — it calls the agent binary with Claude-specific flags:
-
-```
-claude --print --verbose --max-turns 10 --add-dir /path/to/workspace "Do the task"
-```
-
-Gemini CLI doesn't understand any of these flags. It would just crash.
-
-**The hack:** a 25-line shell script that pretends to be Claude.
-
-```bash
-#!/bin/bash
-# Paperclip thinks it's calling Claude Code.
-# It's not. It's calling Gemini CLI.
-
-# Ignore ALL Claude-specific args ($@). Read prompt from stdin.
-PROMPT=$(cat)
-
-# Forward to Gemini CLI with Gemini-native flags
-exec gemini --prompt "$PROMPT" --yolo --output-format stream-json
-```
-
-That's it. Paperclip sends a heartbeat with the prompt on stdin + Claude flags as positional args. The wrapper **ignores** the args and **pipes** stdin straight to Gemini CLI. Paperclip has no idea it's talking to a different model.
-
-### Why this matters
-
-```
-┌─────────────┐    Paperclip     ┌─────────────┐     MCP Bridge     ┌──────────────┐
-│  Paperclip  │ ──────────────► │ Gemini CLI  │ ──────────────────► │ Antigravity  │
-│  (CEO agent)│   heartbeat      │ (free tier) │    AppleScript      │ (heavy code) │
-└─────────────┘                  └─────────────┘                    └──────────────┘
-                                  🆓 Free tokens                     🧠 Deep coding
-                                  ⚡ Fast routing                    📝 File changes
-                                  🔧 Coordination                    🔍 Git diffs
-```
-
-| Layer | What | Cost |
-|-------|------|------|
-| **Paperclip** | Task management, agent governance | Free (self-hosted) |
-| **gemini-wrapper.sh** | The 25-line hack — translates Claude → Gemini | Free |
-| **Gemini CLI** | AI orchestration via Gemini 2.5 Pro | Free (1,000 req/day) |
-| **MCP Bridge** | macOS automation + git polling | Free (local binary) |
-| **Antigravity** | The actual coding | Your subscription |
-
-**Total orchestration cost: $0/day for up to 1,000 tasks.**
-
----
-
-## ⚙️ How It Works
-
-```
-┌──────────────┐     MCP stdio     ┌─────────────┐     AppleScript     ┌──────────────┐
-│  MCP Client  │ ◄───────────────► │ MCP Bridge  │ ──────────────────► │  Target IDE  │
-│ (Gemini CLI) │                   │  (Go server) │                    │ (Antigravity)│
-└──────────────┘                   └──────┬──────┘                    └──────────────┘
-                                          │
-                                   ┌──────▼──────┐
-                                   │  git status  │
-                                   │  (polling)   │
-                                   └─────────────┘
-```
-
-| Step | What happens |
-|------|-------------|
-| **1. Clipboard** | Copies prompt via `pbcopy` |
-| **2. Activate** | Brings target app to foreground via AppleScript |
-| **3. Chat** | Opens chat panel (`Cmd+shortcut`), clears, pastes, Enter |
-| **4. Poll** | Watches `git status --porcelain` until changes appear |
-| **5. Stability check** | After detecting changes, polls 3 more times to confirm IDE stopped writing |
-| **6. Report** | Returns diff, file status, and new file previews |
-
-### Stability Check
-
-A naive approach would read the diff as soon as `git status` changes — but the IDE might still be writing files. MCP Bridge uses an **active stability check**: after detecting changes, it polls `git status` 3 consecutive times (every 2s). Only when the status is identical across all 3 checks does it consider the IDE done. If the status keeps changing, the counter resets.
-
-```
-Change detected → poll #1 (2s) → same? ✓ → poll #2 (2s) → same? ✓ → poll #3 (2s) → same? ✓ → STABLE → read diff
-                                  └─ different? → reset counter, keep polling
-```
-
----
-
-## 🚀 Quick Start
-
-### Build
+## Quickstart
 
 ```sh
 git clone https://github.com/jangtrinh/mcp-bridge-go.git
@@ -129,65 +28,15 @@ cd mcp-bridge-go
 make build
 ```
 
-### Configure
+Configuration is through environment variables. There is no config file.
 
-All configuration via environment variables — zero config files:
+| Variable | Default | What it is |
+| :--- | :--- | :--- |
+| `MCP_BRIDGE_APP` | `Antigravity` | Name of the target app |
+| `MCP_BRIDGE_SHORTCUT` | `l` | Key used with Cmd to open the chat panel |
+| `MCP_BRIDGE_WORKSPACE` | `.` (current directory) | Default workspace path |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MCP_BRIDGE_APP` | `Antigravity` | Target application name |
-| `MCP_BRIDGE_SHORTCUT` | `l` | Key for chat panel (used with Cmd) |
-| `MCP_BRIDGE_WORKSPACE` | `.` (current dir) | Default workspace path |
-
-### Supported Apps
-
-| App | `MCP_BRIDGE_APP` | `MCP_BRIDGE_SHORTCUT` |
-|-----|-------------------|-----------------------|
-| Antigravity | `Antigravity` | `l` |
-| Cursor | `Cursor` | `l` |
-| Windsurf | `Windsurf` | `l` |
-
-> **💡 Works with any Electron-based AI IDE** that has a keyboard shortcut to open a chat panel.
-
-### Add to Gemini CLI
-
-`~/.gemini/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "mcp-bridge": {
-      "command": "/path/to/mcp-bridge",
-      "env": {
-        "MCP_BRIDGE_APP": "Antigravity",
-        "MCP_BRIDGE_WORKSPACE": "/path/to/your/project"
-      }
-    }
-  }
-}
-```
-
-### Add to Claude Desktop
-
-`~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "mcp-bridge": {
-      "command": "/path/to/mcp-bridge",
-      "env": {
-        "MCP_BRIDGE_APP": "Cursor",
-        "MCP_BRIDGE_WORKSPACE": "/path/to/your/project"
-      }
-    }
-  }
-}
-```
-
-### Use with Claude Code, Cursor and Codex
-
-Any MCP client that can launch a stdio server can call `send_to_app` and `check_workspace_changes`. The server only automates the target app on **macOS**, so run it on a Mac.
+Supported values of `MCP_BRIDGE_APP`, as documented in this repository: `Antigravity`, `Cursor`, `Windsurf`. The shortcut is `l` for each of those. The server will talk to any Electron IDE that opens a chat panel with that shortcut, if Accessibility permission is granted.
 
 **Claude Code**
 
@@ -209,154 +58,102 @@ MCP_BRIDGE_APP = "Cursor"
 MCP_BRIDGE_WORKSPACE = "/path/to/your/project"
 ```
 
-**Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project): use the same `mcpServers` JSON as the Claude Desktop example above. Cursor can be both the MCP client and the app that receives the prompt, but pointing `MCP_BRIDGE_APP` at a different app (such as Antigravity) is the usual setup.
+**Gemini CLI** (`~/.gemini/settings.json`) and **Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project):
 
-Check that the server starts: pipe an MCP `initialize` request into `/path/to/mcp-bridge`; it replies with `serverInfo.name` set to `mcp-bridge`.
-
-### Use with Paperclip
-
-**Step 1:** Build MCP Bridge and add it to Gemini CLI (see above).
-
-**Step 2:** In Paperclip, set the agent command to the adapter:
-
-```
-/path/to/mcp-bridge-go/scripts/paperclip-adapter.sh
-```
-
-**Step 3:** Start Paperclip, open Antigravity with your project, assign a task. The full chain activates on the next heartbeat:
-
-```
-Paperclip CEO → paperclip-adapter.sh → Gemini CLI (free) → MCP Bridge → Antigravity
-     │                   │                     │                   │
-     │                   │                     │                   └── Writes code, edits files
-     │                   │                     └── Has MCP Bridge as MCP server
-     │                   └── Ignores Claude flags, pipes stdin to Gemini
-     └── Sends heartbeat with prompt on stdin
+```json
+{
+  "mcpServers": {
+    "mcp-bridge": {
+      "command": "/path/to/mcp-bridge",
+      "env": {
+        "MCP_BRIDGE_APP": "Antigravity",
+        "MCP_BRIDGE_WORKSPACE": "/path/to/your/project"
+      }
+    }
+  }
+}
 ```
 
----
+**Claude Desktop** uses the same JSON in `~/Library/Application Support/Claude/claude_desktop_config.json`. Cursor can be both the MCP client and the app that receives the prompt; pointing `MCP_BRIDGE_APP` at a different app (such as Antigravity) is the usual setup.
 
-## 🔧 MCP Tools
+Pipe an MCP `initialize` request into `/path/to/mcp-bridge` to check that it starts. It replies with `serverInfo.name` set to `mcp-bridge`.
+
+### Paperclip
+
+Build the server and add it to Gemini CLI as above. In Paperclip, set the agent command to `scripts/paperclip-adapter.sh` in this repository. The adapter ignores Claude-specific flags and forwards the prompt on stdin to Gemini CLI, which then calls this server.
+
+## How it works
+
+<p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/flow-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/readme/flow-light.png">
+  <img src="docs/images/readme/flow-dark.png" alt="design:os by Jang" width="100%">
+</picture>
+</p>
+
+`send_to_app` activates the target app through AppleScript, opens the chat panel with the configured shortcut, pastes the prompt, and polls `git status` on the workspace until it changes or `waitSeconds` elapses (default 120). Completion is that git poll, not a reply from the model. A timeout is not a proof of success: the IDE may have asked a question, said that no change was needed, or still be working. The timeout report says whether the app is running and frontmost, and whether the workspace is clean.
+
+`check_workspace_changes` returns the current git status and diff, without sending a prompt.
+
+## Tools
 
 ### `send_to_app`
 
-Sends a prompt to the target application and waits for workspace changes.
+| Parameter | Required | Default | What it is |
+| :--- | :--- | :--- | :--- |
+| `prompt` | yes | | The prompt to send |
+| `workspacePath` | no | `MCP_BRIDGE_WORKSPACE` | Workspace to watch |
+| `waitSeconds` | no | `120` | Maximum wait, in seconds |
 
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `prompt` | ✅ | — | The prompt/task to send |
-| `workspacePath` | — | `MCP_BRIDGE_WORKSPACE` | Workspace to monitor |
-| `waitSeconds` | — | `120` | Max wait time (seconds) |
-
-**On success:** Returns markdown with prompt echo, change status, and full workspace diff.
-
-**On timeout:** Returns diagnostic report — app state (running/frontmost), workspace state, and recommended next actions.
+On success it returns markdown with the prompt, the change status, and the workspace diff. On timeout it returns a diagnostic: app state, workspace state, and what to try next.
 
 ### `check_workspace_changes`
 
-Checks current workspace state without sending a prompt.
+| Parameter | Required | Default | What it is |
+| :--- | :--- | :--- | :--- |
+| `workspacePath` | no | `MCP_BRIDGE_WORKSPACE` | Workspace to inspect |
 
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `workspacePath` | — | `MCP_BRIDGE_WORKSPACE` | Workspace to check |
+Returns git status, a diff (at most 5 KB), previews of untracked files (at most 500 characters each), and the three most recent commits.
 
-**Returns:** Git status, diff (≤5KB), untracked file previews (≤500 chars each), and 3 most recent commits.
+## Limits
 
----
-
-## ⚠️ Known Limitations
-
-### Git Polling as Completion Signal
-
-MCP Bridge uses `git status` to detect when the target AI has finished. This is the biggest architectural trade-off:
-
-| Scenario | Git status | Bridge behavior |
-|----------|-----------|----------------|
-| AI writes code | Changes | ✅ Stability check → returns diff |
-| AI asks a clarifying question | No changes | ⏱ Timeout with diagnostic |
-| AI says "no changes needed" | No changes | ⏱ Timeout with diagnostic |
-| AI crashes | No changes | ⏱ Timeout with diagnostic |
-
-**Why?** Antigravity (and similar IDEs) don't expose an API to read AI responses. The GUI is the only interface. Git polling detects *side effects* (file changes) but is blind to *text responses*.
-
-#### Timeout Diagnostics
-
-When no changes are detected, MCP Bridge returns an informative diagnostic instead of failing silently:
-
-```
-⏱ Prompt sent to Antigravity but no file changes detected after 120s.
-
-Diagnostic:
-- Antigravity: running and frontmost (may still be processing)
-- Workspace: clean (no uncommitted changes)
-- Wait time: 120s
-
-Recommended actions:
-- The AI may have responded with a question or explanation (no code changes)
-- Try sending a more specific prompt
-- Use `check_workspace_changes` to verify current state
-- Increase `waitSeconds` if the task is complex
-```
-
-### Other Limitations
-
-- **macOS only** — AppleScript is not available on other platforms
-- **Requires UI focus** — target app comes to foreground during submission
-- **Sequential only** — one prompt at a time (needs app focus)
-- **No response content** — captures file changes, not the AI's text response
-
----
+- macOS only. AppleScript is not available on other platforms.
+- The target app comes to the foreground. Only one prompt can run at a time.
+- The server captures file changes, not the IDE's text reply.
+- Work that changes no files times out. See the diagnostic above.
+- Accessibility permission is required: System Settings, Privacy & Security, Accessibility, for your terminal or MCP client.
+- The target app must be open, with a workspace loaded.
 
 ## FAQ
 
-**Is this a Figma tool?** No. It sends prompts to Electron-based AI IDEs (Antigravity, Cursor, Windsurf) and returns the resulting git diff. For Figma, see [design-os-figma-plugin](https://github.com/jangtrinh/design-os-figma-plugin).
+**Is this DESIGN:OS Bridge?** No. This server sends prompts to an IDE on your Mac. DESIGN:OS Bridge reads and edits the Figma file you have open. See [jangtrinh/design-os-figma-plugin](https://github.com/jangtrinh/design-os-figma-plugin).
 
-**Does it work on Linux or Windows?** No. It uses AppleScript for UI automation, so it needs macOS and Accessibility permission for your terminal or MCP client.
+**Does it work on Linux or Windows?** No.
 
-**Does it use an API key or run a model?** No. It runs no model and makes no network calls of its own. The target app uses whatever model you configured there.
+**Does it use an API key or run a model?** No. The target app uses whatever model you already configured there.
 
-**How does it know the task is done?** It polls git for workspace changes, so work that changes no files returns a timeout report. See [Known Limitations](#%EF%B8%8F-known-limitations).
+**How does it know the task is done?** It polls git for workspace changes.
 
-**What licence is it under?** Source-available under [PolyForm Shield 1.0.0](LICENSE): free to use and modify, but you may not resell it or build a competing product from it.
-
----
-
-## 🔄 Alternatives
-
-| Tool | Approach | Trade-off |
-|------|----------|-----------|
-| **SimulateDev** | Full workflow engine, AppleScript-based | Heavier — full Planner/Coder/Tester pipeline |
-| **Claude Agent Teams** | Claude agents via `@mentions` | Locked to Claude ecosystem |
-| **applescript-mcp** | Generic AppleScript MCP server | General-purpose, no AI-IDE-specific features |
-| **VS Code Subagents** | VS Code's native delegation | VS Code only, not cross-tool |
-| **MCP Bridge** | MCP-native, ~560 lines, cross-tool | macOS only, sequential, requires UI focus |
-
-**MCP Bridge is for you if:** You want a tiny, composable MCP tool that connects any MCP client to any Electron-based AI IDE — especially if you're optimizing for free-tier models as orchestrators.
-
----
-
-## 🛠️ Development
+## Development
 
 ```sh
-make audit    # Runs: gofmt → go vet → golangci-lint → gosec → go build
-make build    # Compile with version/commit/date via ldflags
+make audit    # gofmt, go vet, golangci-lint, gosec, go build
+make build    # Compile with version, commit and date via ldflags
 make lint     # Static analysis only
-make clean    # Remove binary
+make clean    # Remove the binary
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for code standards and PR guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Requirements: macOS, Go 1.26 or later (from `go.mod`), and Git.
 
-## 📋 Requirements
+## DESIGN:OS
 
-- **macOS** — uses AppleScript for UI automation
-- **Go 1.26+** — to build from source
-- **Git** — for workspace change detection
-- Target app must be **open** with a workspace loaded
-- **Accessibility permissions** — System Settings → Privacy & Security → Accessibility → enable your terminal/MCP client
+mcp-bridge-go is listed on the [DESIGN:OS hub](https://jangtrinh.github.io/). The other products: [Studio](https://github.com/jangtrinh/design-os-studio), [CLI](https://github.com/jangtrinh/design-os), [Bridge](https://github.com/jangtrinh/design-os-figma-plugin), [SVG Animation](https://github.com/jangtrinh/design-os-svg-animation), [Code2Flow](https://github.com/jangtrinh/design-os-code2flow) and [3D Blender](https://github.com/jangtrinh/design-os-3d-blender).
 
-## 📄 License
+## Contributing and license
 
-[PolyForm Shield 1.0.0](LICENSE) © 2026 Jang Trinh — free to use and modify; no resale or competing products.
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [PolyForm Shield 1.0.0](LICENSE). FREE to use and modify, including for paid client work; you may not resell it or build a competing product from it.
 
 ## Listed on
 
@@ -364,8 +161,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for code standards and PR guidelines.
   <a href="https://mcpservers.org/servers/jangtrinh/mcp-bridge-go"><img src="https://mcpservers.org/badge.svg" alt="Listed on mcpservers.org" width="163" height="20"></a>
 </p>
 
----
+Built by [Jang Trịnh](https://github.com/jangtrinh), creative technologist and autonomous system architect.
 
-<p align="center">
-  Built by the founder of <a href="https://easeui.design/"><strong>EaseUI</strong></a> — an AI-powered design tool that generates production-ready UI from text prompts.
-</p>
+[GitHub](https://github.com/jangtrinh) · [LinkedIn](https://www.linkedin.com/in/jangtrinh/) · [Hub](https://jangtrinh.github.io/) · [YouTube](https://www.youtube.com/@designosbyjang) · [X](https://x.com/Jangtrinhvn)
